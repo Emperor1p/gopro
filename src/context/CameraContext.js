@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import toast from 'react-hot-toast';
+import { useAuth } from './AuthContext';
 
 const CameraContext = createContext();
 
@@ -65,6 +66,7 @@ const cameraReducer = (state, action) => {
 export const CameraProvider = ({ children }) => {
   const [state, dispatch] = useReducer(cameraReducer, initialState);
   const [socket, setSocket] = React.useState(null);
+  const { token } = useAuth();
 
   useEffect(() => {
     // Initialize socket connection
@@ -129,6 +131,7 @@ export const CameraProvider = ({ children }) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
       });
 
@@ -153,7 +156,12 @@ export const CameraProvider = ({ children }) => {
 
   const disconnectCamera = async () => {
     try {
-      await fetch('/api/camera/disconnect', { method: 'POST' });
+      await fetch('/api/camera/disconnect', { 
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
       dispatch({
         type: 'UPDATE_CAMERA_STATUS',
         payload: { connected: false },
@@ -173,6 +181,9 @@ export const CameraProvider = ({ children }) => {
     try {
       const response = await fetch('/api/camera/record/start', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
       });
 
       if (response.ok) {
@@ -194,6 +205,9 @@ export const CameraProvider = ({ children }) => {
     try {
       const response = await fetch('/api/camera/record/stop', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
       });
 
       if (response.ok) {
@@ -220,6 +234,9 @@ export const CameraProvider = ({ children }) => {
     try {
       const response = await fetch('/api/camera/stream/start', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
       });
 
       if (response.ok) {
@@ -241,6 +258,9 @@ export const CameraProvider = ({ children }) => {
     try {
       const response = await fetch('/api/camera/stream/stop', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
       });
 
       if (response.ok) {
@@ -265,6 +285,7 @@ export const CameraProvider = ({ children }) => {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify(settings),
       });
@@ -286,7 +307,11 @@ export const CameraProvider = ({ children }) => {
 
   const fetchRecordings = async () => {
     try {
-      const response = await fetch('/api/recordings');
+      const response = await fetch('/api/recordings', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
       const data = await response.json();
 
       if (response.ok) {
@@ -303,6 +328,9 @@ export const CameraProvider = ({ children }) => {
     try {
       const response = await fetch(`/api/recordings/${recordingId}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
       });
 
       if (response.ok) {

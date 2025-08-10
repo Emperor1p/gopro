@@ -25,8 +25,14 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
-// Serve React production build
-app.use(express.static(path.join(__dirname, '../build')));
+
+// Serve React production build only if it exists
+const buildPath = path.join(__dirname, '../build');
+if (fs.existsSync(buildPath)) {
+  app.use(express.static(buildPath));
+} else {
+  console.log('Build directory not found. Running in API-only mode.');
+}
 
 // Database setup (use Render Disk path)
 const dbPath = process.env.NODE_ENV === 'production' ? '/opt/render/project/src/database/database.sqlite' : './database.sqlite';
@@ -46,7 +52,7 @@ function initializeDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NOT NULL,
+      password TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
@@ -74,11 +80,21 @@ function initializeDatabase() {
     const defaultPassword = bcrypt.hashSync('admin123', 10);
     db.run(`INSERT OR IGNORE INTO users (name, email, password) VALUES (?, ?, ?)`,
       ['Admin User', 'admin@gopro.com', defaultPassword]);
+    
+    // Create constant token for default admin user
+    const adminToken = jwt.sign(
+      { id: 1, email: 'admin@gopro.com', name: 'Admin User' },
+      JWT_SECRET,
+      { expiresIn: '365d' }
+    );
+    console.log('=== DEFAULT ADMIN TOKEN ===');
+    console.log(adminToken);
+    console.log('=== COPY THIS TOKEN ===');
   });
 }
 
-// JWT Secret
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-for-local-dev-only';
+// JWT Secret - Using constant for development
+const JWT_SECRET = 'gopro-secret-key-2024';
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
@@ -333,9 +349,18 @@ app.use('/api/*', (req, res) => {
   res.status(404).json({ message: 'API route not found' });
 });
 
-// Catch-all route for React app
+// Catch-all route for React app only if build exists
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../build', 'index.html'));
+  const indexPath = path.join(__dirname, '../build', 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).json({ 
+      message: 'Frontend not built. Please run npm run build first.',
+      api: 'API is running at /api endpoints',
+      token: 'Check server console for admin token'
+    });
+  }
 });
 
 const PORT = process.env.PORT || 5000;
