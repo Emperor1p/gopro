@@ -13,18 +13,24 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "http://localhost:3000",
-    methods: ["GET", "POST"]
+    origin: process.env.NODE_ENV === 'production' ? 'https://gopro-2.onrender.com' : 'http://localhost:3000',
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' ? 'https://gopro-2.onrender.com' : 'http://localhost:3000',
+  credentials: true
+}));
 app.use(express.json());
-app.use(express.static('public'));
+// Serve React production build
+app.use(express.static(path.join(__dirname, '../build')));
 
-// Database setup
-const db = new sqlite3.Database('./database.sqlite', (err) => {
+// Database setup (use Render Disk path)
+const dbPath = process.env.NODE_ENV === 'production' ? '/opt/render/project/src/database/database.sqlite' : './database.sqlite';
+const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error('Error opening database:', err);
   } else {
@@ -36,7 +42,6 @@ const db = new sqlite3.Database('./database.sqlite', (err) => {
 // Initialize database tables
 function initializeDatabase() {
   db.serialize(() => {
-    // Users table
     db.run(`CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -45,7 +50,6 @@ function initializeDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
-    // Recordings table
     db.run(`CREATE TABLE IF NOT EXISTS recordings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
@@ -57,7 +61,6 @@ function initializeDatabase() {
       FOREIGN KEY (user_id) REFERENCES users (id)
     )`);
 
-    // Camera settings table
     db.run(`CREATE TABLE IF NOT EXISTS camera_settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER,
@@ -68,7 +71,6 @@ function initializeDatabase() {
       FOREIGN KEY (user_id) REFERENCES users (id)
     )`);
 
-    // Insert default admin user if not exists
     const defaultPassword = bcrypt.hashSync('admin123', 10);
     db.run(`INSERT OR IGNORE INTO users (name, email, password) VALUES (?, ?, ?)`,
       ['Admin User', 'admin@gopro.com', defaultPassword]);
@@ -99,7 +101,7 @@ const authenticateToken = (req, res, next) => {
 // File upload configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = 'uploads/recordings';
+    const uploadDir = process.env.NODE_ENV === 'production' ? '/opt/render/project/src/uploads/recordings' : 'uploads/recordings';
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -107,7 +109,7 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalName));
   }
 });
 
@@ -122,7 +124,6 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    // Check if user already exists
     db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
       if (err) {
         return res.status(500).json({ message: 'Database error' });
@@ -132,17 +133,14 @@ app.post('/api/auth/register', async (req, res) => {
         return res.status(400).json({ message: 'User already exists' });
       }
 
-      // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Insert new user
       db.run('INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
         [name, email, hashedPassword], function(err) {
           if (err) {
             return res.status(500).json({ message: 'Error creating user' });
           }
 
-          // Generate JWT token
           const token = jwt.sign(
             { id: this.lastID, email, name },
             JWT_SECRET,
@@ -206,7 +204,6 @@ app.get('/api/auth/verify', authenticateToken, (req, res) => {
 
 // Camera control routes
 app.post('/api/camera/connect', authenticateToken, (req, res) => {
-  // Simulate camera connection
   setTimeout(() => {
     io.emit('camera_status', {
       connected: true,
@@ -242,7 +239,7 @@ app.post('/api/camera/record/stop', authenticateToken, (req, res) => {
 });
 
 app.post('/api/camera/stream/start', authenticateToken, (req, res) => {
-  const streamUrl = 'http://localhost:5000/stream';
+  const streamUrl = process.env.NODE_ENV === 'production' ? 'https://gopro-2.onrender.com/stream' : 'http://localhost:5000/stream';
   io.emit('stream_url', streamUrl);
   res.json({ message: 'Streaming started', streamUrl });
 });
@@ -297,6 +294,21 @@ app.delete('/api/recordings/:id', authenticateToken, (req, res) => {
     });
 });
 
+// Portfolio enhancement: GitHub stats route
+app.get('/api/github-stats', async (req, res) => {
+  try {
+    const response = await fetch('https://api.github.com/repos/Emperor1p/gopro');
+    const data = await response.json();
+    res.json({
+      stars: data.stargazers_count || 0,
+      forks: data.forks_count || 0,
+      lastUpdated: data.updated_at ? new Date(data.updated_at).toLocaleDateString() : 'N/A'
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching GitHub stats' });
+  }
+});
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
@@ -305,7 +317,6 @@ io.on('connection', (socket) => {
     console.log('Client disconnected:', socket.id);
   });
 
-  // Handle camera status updates
   socket.on('camera_status_update', (status) => {
     socket.broadcast.emit('camera_status', status);
   });
@@ -317,9 +328,14 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Something went wrong!' });
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ message: 'Route not found' });
+// 404 handler for API routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ message: 'API route not found' });
+});
+
+// Catch-all route for React app
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../build', 'index.html'));
 });
 
 const PORT = process.env.PORT || 5000;
@@ -331,5 +347,3 @@ server.listen(PORT, () => {
 });
 
 module.exports = app;
-
-
