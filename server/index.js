@@ -46,7 +46,7 @@ function initializeDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
+      password TEXT NOT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
@@ -78,7 +78,7 @@ function initializeDatabase() {
 }
 
 // JWT Secret
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-for-local-dev-only';
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
